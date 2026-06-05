@@ -183,29 +183,98 @@ Copyright © 2016–2023
 
 Licensed under [the AGPL License](/LICENSE.md).
 
+# Envobyte Ltd. — Backend Developer Technical Assignment
+## Polymorphic Tagging System with Caching and Advanced Filtering
+
+Hey! Thanks for taking the time to review my submission for the Envobyte technical assignment. In this project, I've extended Monica CRM's backend to support a robust, polymorphic, and performance-optimized tagging system for contacts.
+
+Below, I've documented my approach, implementation details, API documentation, testing instructions, assumptions, and the trade-offs I made while building this.
+
 ---
 
-# Envobyte Tagging System Assignment Documentation
+## 🚀 How to Set Up & Run
 
-This section documents the implementation of the Polymorphic Tagging System with Caching and Filtering for the Envobyte Technical Assignment.
+If you are evaluating this locally, here are the exact commands you need to get everything up and running:
 
-## 1. Approach
+### 1. Environment Setup & Migrations
+First, copy the `.env.example` file to `.env` (if you haven't already) and configure your database and Redis cache drivers.
+To migrate the database and set up the new `tags` and `taggables` tables:
+```bash
+# Run migrations using the project's configured PHP executable
+D:/Envobyte/php-temp/php/php.exe artisan migrate
+```
 
-*   **Polymorphic Architecture:** Implemented a polymorphic pivot table (`taggables`) with columns `tag_id`, `taggable_id`, and `taggable_type`. This decouples tags from any single model and permits future expansion to tag other entities (e.g., Activities or Notes) without modifying the schema.
-*   **Database Indexes:** Composite primary key on `(tag_id, taggable_id, taggable_type)` was established to prevent duplicate tag mappings and optimize search by tag. A secondary index on `(taggable_type, taggable_id)` was added to speed up querying all tags for a single contact.
-*   **RESTful API Endpoints:** Cleanly registered API endpoints in `routes/api.php` under Sanctum authentication, separating tag management (CRUD) and contact tag associations.
-*   **SQL-Based Filtering:** The contact filter uses Eloquent `whereHas` constraints dynamically built in a loop to guarantee strict **AND logic** directly at the SQL query level, maintaining fast execution without loading entire collections into PHP memory.
-*   **Cache Strategy:** Per-account tag lists are cached using `tags:account:{account_id}` with a 600-second (10-minute) TTL. Cache invalidation is triggered on every create, update, delete, attach, and detach event to maintain database-to-cache synchronization.
+### 2. Seeding test data
+To seed the database with mock records (which will include vaults, users, and contacts):
+```bash
+D:/Envobyte/php-temp/php/php.exe artisan db:seed
+```
 
-## 2. Assumptions
+### 3. Running Automated Tests
+I wrote a comprehensive feature test suite covering all the api endpoints, tag CRUD, filtering logic, and cache invalidation. To execute the tests:
+```bash
+D:/Envobyte/php-temp/php/php.exe artisan test --filter TagApiTest
+```
 
-*   **Multi-Vault Isolation:** Tags and contacts are linked to specific vaults. It is assumed that API requests must validate that tag/contact IDs belong to vaults owned by the authenticated user's account to prevent unauthorized data exposure.
-*   **AND Filtering Input:** It is assumed that filtering requests pass multiple tags as an array (e.g., `tags[]=1&tags[]=2`). The API automatically filters out null or empty values.
-*   **Cascading Deletes:** Deleting a tag is assumed to either safely detach it from all contacts or optionally migrate the contacts to a designated `reassign_tag_id`.
+---
 
-## 3. Trade-offs
+## 🛠️ Implementation Details & Features
 
-*   **Composite Primary Key vs. Auto-Incrementing ID:** Using `(tag_id, taggable_id, taggable_type)` as a composite primary key reduces database storage overhead and prevents duplicate rows, but lacks a single simple ID column. Since taggables is a pivot table and is never queried individually by ID, this is a highly favorable trade-off.
-*   **Looping `whereHas` Constraints:** Loop-based nested `whereHas` clauses compile into nested `EXISTS` subqueries. For typical PRM database sizes, this is fast and readable. For millions of contacts, a flat join with a `GROUP BY` and `HAVING COUNT(distinct tag_id) = N` query could be faster, but it is harder to maintain in Eloquent. We chose `whereHas` to align with Monica's code conventions.
-*   **Account-Wide Cache Invalidation:** The entire cache for the account is cleared on any write operations. Although simple, this strategy leads to clearing the cache for all users of the account if one user updates a tag. Given that tag operations are relatively infrequent compared to reads, this keeps cache consistency perfect at negligible performance cost.
+### 1. Database Schema
+I created a migration that modifies the existing tags table and sets up a new polymorphic table for contact relationships:
+- **`tags` table changes:** Added nullable `tag_category` and `color` columns next to the original slug, allowing tags to be grouped and styled.
+- **`taggables` table:** Created a polymorphic relationship pivot table with the columns:
+  - `tag_id` (foreign key constrained to `tags` table)
+  - `taggable_id` (string uuid representing the taggable model, e.g. a Contact)
+  - `taggable_type` (string class name of the taggable model)
+  - `timestamps` (created_at/updated_at)
+- **Indexing Strategy:**
+  - Composite primary key on `(tag_id, taggable_id, taggable_type)` to guarantee uniqueness of tags on any given entity and index tag counts and search-by-tag queries.
+  - Secondary composite index on `(taggable_type, taggable_id)` to speed up loading tag lists for individual contacts.
+
+### 2. API Endpoints
+All API endpoints are registered in `routes/api.php` under the `auth:sanctum` middleware group to keep them secure. They use Monica's standard API controllers and JSON Resource structures:
+
+#### Tag Management:
+*   **`GET /api/tags`**: Returns a list of all tags associated with the vaults the authenticated user has access to. Under the hood, this query counts the attached contacts and caches the result.
+*   **`POST /api/tags`**: Creates a new tag. Accepts parameters `name`, `vault_id` (optional), `tag_category` (optional), and `color` (optional). Automatically generates a slug and invalidates the tag cache.
+*   **`PUT /api/tags/{id}`**: Updates tag properties.
+*   **`DELETE /api/tags/{id}`**: Deletes a tag. If the tag is currently attached to contacts, it detaches it cleanly. It also supports optional tag reassignment via the `reassign_tag_id` request parameter.
+
+#### Contact Tag Association:
+*   **`POST /api/contacts/{id}/tags`**: Attaches a list of tag IDs to a contact. Requires `tag_ids` (array of tag IDs).
+*   **`DELETE /api/contacts/{id}/tags/{tagId}`**: Detaches a single tag from a contact.
+
+#### Contact Filtering:
+*   **`GET /api/contacts?tags[]=1&tags[]=2`**: Returns contacts filtered by tags.
+    - **AND Logic:** Fully implemented. A contact must possess *all* tags passed in the array.
+    - **Pagination & Sorting:** Works seamlessly with Monica's pagination middleware. Supports sorting alphabetically (`sort=name`) or by creation date (default).
+
+---
+
+## ⚡ Cache & Performance
+
+To meet the high-performance requirements, the tag list endpoint (`GET /api/tags`) utilizes caching:
+- **Cache Driver:** Scalable using Redis or the default cache driver.
+- **TTL (Time-to-Live):** Set to `600 seconds` (10 minutes).
+- **Cache Key Format:** Scoped per account to prevent data leaks: `tags:account:{account_id}`.
+- **Cache Invalidation:** The cache is automatically flushed using `Cache::forget` during any action that changes tag lists or contact-tag relationships:
+  - Tag creation, updating, or deletion.
+  - Attaching tags to contacts.
+  - Detaching tags from contacts.
+
+---
+
+## 🧠 Approach, Assumptions & Trade-offs
+
+### Approach
+I took a polymorphic approach so that the tag system remains future-proof. Monica currently only associated tags with posts. By introducing `taggables`, we can now tag contacts, and in the future, we could tag activities, notes, or documents without changing the database schema.
+
+### Assumptions
+- **Vault-Level Security:** Tags are stored at the vault level, but the cache is scoped at the account level. I assumed that a user should only be able to attach tags that belong to the vaults they have access to. The controllers strictly validate this to prevent unauthorized cross-vault tag associations.
+- **Array Query Parameters:** I assumed tag filtering parameters would be passed as an array (e.g. `tags[]=1&tags[]=2`). The controller filters out empty strings or nulls to prevent bad SQL queries.
+
+### Trade-offs
+- **Composite Primary Key in Pivot:** I chose `(tag_id, taggable_id, taggable_type)` as a composite primary key rather than adding a standard `id` auto-incrementing column. This saves database space and automatically prevents double-tagging a contact with the same tag. The downside is that we can't easily reference a single row in the pivot table by an ID, but since pivot rows are never queried individually, this trade-off is optimal.
+- **Looping `whereHas` for AND Logic:** I used a `foreach` loop to chain multiple `whereHas` clauses onto the query. This compiles into nested SQL `EXISTS` queries. While extremely clean and leveraging Eloquent's relationships perfectly, it can result in slower queries if a contact has hundreds of tags and we filter by all of them. For typical contact counts in a CRM, this is the most maintainable and safe choice.
 
