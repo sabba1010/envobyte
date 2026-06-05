@@ -182,3 +182,30 @@ Monica makes use of numerous open-source projects and we are deeply grateful. We
 Copyright © 2016–2023
 
 Licensed under [the AGPL License](/LICENSE.md).
+
+---
+
+# Envobyte Tagging System Assignment Documentation
+
+This section documents the implementation of the Polymorphic Tagging System with Caching and Filtering for the Envobyte Technical Assignment.
+
+## 1. Approach
+
+*   **Polymorphic Architecture:** Implemented a polymorphic pivot table (`taggables`) with columns `tag_id`, `taggable_id`, and `taggable_type`. This decouples tags from any single model and permits future expansion to tag other entities (e.g., Activities or Notes) without modifying the schema.
+*   **Database Indexes:** Composite primary key on `(tag_id, taggable_id, taggable_type)` was established to prevent duplicate tag mappings and optimize search by tag. A secondary index on `(taggable_type, taggable_id)` was added to speed up querying all tags for a single contact.
+*   **RESTful API Endpoints:** Cleanly registered API endpoints in `routes/api.php` under Sanctum authentication, separating tag management (CRUD) and contact tag associations.
+*   **SQL-Based Filtering:** The contact filter uses Eloquent `whereHas` constraints dynamically built in a loop to guarantee strict **AND logic** directly at the SQL query level, maintaining fast execution without loading entire collections into PHP memory.
+*   **Cache Strategy:** Per-account tag lists are cached using `tags:account:{account_id}` with a 600-second (10-minute) TTL. Cache invalidation is triggered on every create, update, delete, attach, and detach event to maintain database-to-cache synchronization.
+
+## 2. Assumptions
+
+*   **Multi-Vault Isolation:** Tags and contacts are linked to specific vaults. It is assumed that API requests must validate that tag/contact IDs belong to vaults owned by the authenticated user's account to prevent unauthorized data exposure.
+*   **AND Filtering Input:** It is assumed that filtering requests pass multiple tags as an array (e.g., `tags[]=1&tags[]=2`). The API automatically filters out null or empty values.
+*   **Cascading Deletes:** Deleting a tag is assumed to either safely detach it from all contacts or optionally migrate the contacts to a designated `reassign_tag_id`.
+
+## 3. Trade-offs
+
+*   **Composite Primary Key vs. Auto-Incrementing ID:** Using `(tag_id, taggable_id, taggable_type)` as a composite primary key reduces database storage overhead and prevents duplicate rows, but lacks a single simple ID column. Since taggables is a pivot table and is never queried individually by ID, this is a highly favorable trade-off.
+*   **Looping `whereHas` Constraints:** Loop-based nested `whereHas` clauses compile into nested `EXISTS` subqueries. For typical PRM database sizes, this is fast and readable. For millions of contacts, a flat join with a `GROUP BY` and `HAVING COUNT(distinct tag_id) = N` query could be faster, but it is harder to maintain in Eloquent. We chose `whereHas` to align with Monica's code conventions.
+*   **Account-Wide Cache Invalidation:** The entire cache for the account is cleared on any write operations. Although simple, this strategy leads to clearing the cache for all users of the account if one user updates a tag. Given that tag operations are relatively infrequent compared to reads, this keeps cache consistency perfect at negligible performance cost.
+
