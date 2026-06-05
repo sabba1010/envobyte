@@ -22,4 +22,15 @@ Route::middleware('auth:sanctum')->name('api.')->group(function () {
 
     // vaults
     Route::apiResource('vaults', VaultController::class);
+
+    // tags
+    Route::get('tags', [\App\Http\Controllers\Api\TagApiController::class, 'index']);
+    Route::post('tags', [\App\Http\Controllers\Api\TagApiController::class, 'store']);
+    Route::put('tags/{id}', [\App\Http\Controllers\Api\TagApiController::class, 'update']);
+    Route::delete('tags/{id}', [\App\Http\Controllers\Api\TagApiController::class, 'destroy']);
+
+    // contacts
+    Route::get('contacts', [\App\Http\Controllers\Api\ContactApiController::class, 'index']);
+    Route::post('contacts/{id}/tags', [\App\Http\Controllers\Api\ContactApiController::class, 'attachTags']);
+    Route::delete('contacts/{id}/tags/{tagId}', [\App\Http\Controllers\Api\ContactApiController::class, 'detachTag']);
 });
