@@ -26,7 +26,6 @@
 !.yarn/versions
 _ide_helper.php
 _ide_helper_models.php
-.env
 .DS_Store
 .idea
 Homestead.json
@@ -40,3 +39,5 @@ monica.db
 sail
 temp_auto_push.bat
 temp_interactive_push.bat
+branch_structure.json
+config.bat
