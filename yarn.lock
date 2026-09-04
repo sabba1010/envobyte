@@ -1508,11 +1508,11 @@ __metadata:
   linkType: hard
 
 "@vitejs/plugin-basic-ssl@npm:^2.1.0":
-  version: 2.1.0
-  resolution: "@vitejs/plugin-basic-ssl@npm:2.1.0"
+  version: 2.3.0
+  resolution: "@vitejs/plugin-basic-ssl@npm:2.3.0"
   peerDependencies:
-    vite: ^6.0.0 || ^7.0.0
-  checksum: 10c0/aa618be6bd915163aba27b2db780eab2f0e5d800fea48795f638fb6c1d098db8008ba7f84c708dc191159efecf6ec4e0191ebc5bb7a1a31779c01d0252bf56b0
+    vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+  checksum: 10c0/754ebe29a61ac694e665477187f425b7c3b41e30af8d392613250bf65f9b2741e7f5a6ec00a3f88f1a14bfda96e93c6b5e0f75e86357737bc4e92c8dc455c1c0
   languageName: node
   linkType: hard
 
